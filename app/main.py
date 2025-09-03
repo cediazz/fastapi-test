@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from .database import create_tables
 
 app = FastAPI(
     title="Task API",
@@ -6,4 +7,8 @@ app = FastAPI(
     version="1.0.0"
 )
 
+#create tables
+@app.on_event("startup")
+async def on_startup():
+    await create_tables()
 
