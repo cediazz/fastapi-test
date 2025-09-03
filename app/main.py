@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from .database import create_tables
 from .routes.user_routes import users_routers
+from .routes.task_routes import task_routers
 
 app = FastAPI(
     title="Task API",
@@ -8,6 +9,7 @@ app = FastAPI(
     version="1.0.0"
 )
 app.include_router(users_routers)
+app.include_router(task_routers)
 
 #create tables
 @app.on_event("startup")

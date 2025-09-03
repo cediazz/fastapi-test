@@ -26,37 +26,6 @@ class UserService:
         )
         return result.scalar_one_or_none()
     
-    async def get_current_user(
-        self,
-        token: str = Depends(oauth2_scheme),
-        session: AsyncSession = Depends(get_async_session)
-    ):
-        credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-        )
-        try:
-            payload = jwt.decode(token, get_settings().SECRET_KEY, algorithms=[get_settings().ALGORITHM])
-            user_id = payload.get("sub")
-            if user_id is None:
-                raise credentials_exception
-            token_data = TokenData(user_id=user_id)
-        except JWTError:
-            raise credentials_exception
-        user = await self.get_user_by_id(session, user_id=token_data.user_id)
-        if user is None:
-            raise credentials_exception
-        return user
-    
-    async def get_current_active_user(
-        self,
-        current_user: models.User = Depends(get_current_user)
-    ):
-        if not current_user.is_active:
-            raise HTTPException(status_code=400, detail="Inactive user")
-        return current_user
-    
     async def create_user(self, session: AsyncSession, user: user_schemas.UserCreate):
         db_user = await self.get_user_by_email(session, user.email)
         if db_user:

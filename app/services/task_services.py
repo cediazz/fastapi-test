@@ -1,75 +1,81 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select,delete
 from .. import models
-from ..schemas import user_schemas
-from ..auth import get_password_hash
-from fastapi import HTTPException, status, Depends
-from ..auth import oauth2_scheme
-from ..database import get_async_session
-from jose import JWTError, jwt
-from ..config import get_settings
-from ..schemas.user_schemas import TokenData
+from ..schemas import task_schemas
+from fastapi import HTTPException,Depends
+from ..services.user_services import UserService
 
-class UserService:
+class TaskService:
     
-    
-    async def get_user_by_email(self,session: AsyncSession, email: str):
-        result = await session.execute(
-        select(models.User).where(models.User.email == email)
-        )
-        return result.scalar_one_or_none()
-    
-    async def get_user_by_id(self, session: AsyncSession, user_id: int):
-        result = await session.execute(
-        select(models.User).where(models.User.id == user_id)
-        )
-        return result.scalar_one_or_none()
-    
-    async def get_current_user(
+    async def get_user_tasks(
         self,
-        token: str = Depends(oauth2_scheme),
-        session: AsyncSession = Depends(get_async_session)
+        session: AsyncSession, 
+        user_id: int, 
+        skip: int = 0, 
+        limit: int = 100
     ):
-        credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-        )
-        try:
-            payload = jwt.decode(token, get_settings().SECRET_KEY, algorithms=[get_settings().ALGORITHM])
-            user_id = payload.get("sub")
-            if user_id is None:
-                raise credentials_exception
-            token_data = TokenData(user_id=user_id)
-        except JWTError:
-            raise credentials_exception
-        user = await self.get_user_by_id(session, user_id=token_data.user_id)
-        if user is None:
-            raise credentials_exception
-        return user
-    
-    async def get_current_active_user(
-        self,
-        current_user: models.User = Depends(get_current_user)
-    ):
-        if not current_user.is_active:
-            raise HTTPException(status_code=400, detail="Inactive user")
-        return current_user
-    
-    async def create_user(self, session: AsyncSession, user: user_schemas.UserCreate):
-        db_user = await self.get_user_by_email(session, user.email)
-        if db_user:
-            raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User already registered"
-        )
-        hashed_password = get_password_hash(user.password)
-        db_user = models.User(
-            email=user.email,
-            hashed_password=hashed_password,
-            full_name=user.full_name
+        result = await session.execute(
+            select(models.Task)
+            .where(models.Task.user_id == user_id)
+            .offset(skip)
+            .limit(limit)
+            .order_by(models.Task.created_at.desc())
             )
-        session.add(db_user)
+        return result.scalars().all()
+    
+    async def get_task_by_id(
+        self, 
+        session: AsyncSession, 
+        task_id: int, 
+        user_id: int
+    ):
+        result = await session.execute(
+            select(models.Task)
+            .where(models.Task.id == task_id)
+            .where(models.Task.user_id == user_id)
+        )
+        return result.scalar_one_or_none()
+    
+    async def create_user_task(
+        self, 
+        session: AsyncSession, 
+        task: task_schemas.TaskCreate,
+        user_id : int
+    ):
+        db_task = models.Task(**task.model_dump(), user_id=user_id)
+        session.add(db_task)
         await session.commit()
-        await session.refresh(db_user)
-        return db_user
+        await session.refresh(db_task)
+        return db_task
+    
+    async def update_task(
+        self, 
+        session: AsyncSession, 
+        task_id: int, 
+        task_update: task_schemas.TaskUpdate, 
+        user_id: int
+    ):
+        existing_task = await self.get_task_by_id(session, task_id, user_id)
+        if not existing_task:
+            raise HTTPException(status_code=400, detail="Invalid task id")
+        update_data = task_update.model_dump(exclude_unset=True)
+        existing_task.title = update_data['title']
+        existing_task.description = update_data['description']
+        existing_task.completed = update_data['completed']
+        await session.commit()
+        await session.refresh(existing_task)
+        return existing_task
+    
+    async def delete_task(
+        self, 
+        session: AsyncSession, 
+        task_id: int, 
+        user_id: int
+    ):
+        result = await session.execute(
+            delete(models.Task)
+            .where(models.Task.id == task_id)
+            .where(models.Task.user_id == user_id)
+    )
+        await session.commit()
+        return result.rowcount > 0
