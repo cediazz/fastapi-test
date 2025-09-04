@@ -1,9 +1,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select,delete
+from sqlalchemy import select,update,delete
 from .. import models
 from ..schemas import task_schemas
-from fastapi import HTTPException,Depends
-from ..services.user_services import UserService
+from fastapi import HTTPException
 
 class TaskService:
     
@@ -34,7 +33,10 @@ class TaskService:
             .where(models.Task.id == task_id)
             .where(models.Task.user_id == user_id)
         )
-        return result.scalar_one_or_none()
+        task = result.scalar_one_or_none()
+        if not task:
+            raise HTTPException(status_code=400, detail="Invalid task id")
+        return task
     
     async def create_user_task(
         self, 
@@ -55,16 +57,19 @@ class TaskService:
         task_update: task_schemas.TaskUpdate, 
         user_id: int
     ):
-        existing_task = await self.get_task_by_id(session, task_id, user_id)
-        if not existing_task:
+        stmt = (
+        update(models.Task)
+        .where(models.Task.id == task_id, models.Task.user_id == user_id)
+        .values(**task_update.model_dump(exclude_unset=True))
+        .returning(models.Task)
+        )
+        result = await session.execute(stmt)
+        task = result.scalar_one_or_none()
+        if not task:
             raise HTTPException(status_code=400, detail="Invalid task id")
-        update_data = task_update.model_dump(exclude_unset=True)
-        existing_task.title = update_data['title']
-        existing_task.description = update_data['description']
-        existing_task.completed = update_data['completed']
         await session.commit()
-        await session.refresh(existing_task)
-        return existing_task
+        await session.refresh(task)
+        return task
     
     async def delete_task(
         self, 
@@ -73,9 +78,12 @@ class TaskService:
         user_id: int
     ):
         result = await session.execute(
-            delete(models.Task)
-            .where(models.Task.id == task_id)
-            .where(models.Task.user_id == user_id)
-    )
+        delete(models.Task)
+        .where(models.Task.id == task_id, models.Task.user_id == user_id)
+        .returning(models.Task.id)
+        )
+        task = result.scalar_one_or_none()
+        if not task:
+            raise HTTPException(status_code=400, detail="Invalid task id")
         await session.commit()
-        return result.rowcount > 0
+        return {"message": "Task deleted successfully"}

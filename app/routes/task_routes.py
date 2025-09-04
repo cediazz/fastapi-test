@@ -1,11 +1,12 @@
-from fastapi import APIRouter,Depends
+from fastapi import APIRouter,Depends, Query
 from ..schemas import task_schemas
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_async_session
 from .. import models
 from ..services.task_services import TaskService
 from .. import auth
-
+from typing import List
+from ..dependencies import get_task_service
 
 task_routers = APIRouter(
     prefix="/task",
@@ -19,54 +20,46 @@ task_routers = APIRouter(
 async def create_task(
     task: task_schemas.TaskCreate,
     current_user: models.User = Depends(auth.get_current_active_user),
-    session: AsyncSession = Depends(get_async_session)
+    session: AsyncSession = Depends(get_async_session),
+    task_service: TaskService = Depends(get_task_service)
 ):
-    return await TaskService().create_user_task(session, task, current_user.id)
+    return await task_service.create_user_task(session, task, current_user.id)
 
-"""@app.get("/tasks", response_model=List[schemas.TaskResponse])
-async def read_tasks(
+@task_routers.get("/", response_model=List[task_schemas.TaskResponse])
+async def list_tasks(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    completed: Optional[bool] = None,
     current_user: models.User = Depends(auth.get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_async_session),
+    task_service: TaskService = Depends(get_task_service)
 ):
-    tasks = await crud.get_user_tasks(db, current_user.id, skip=skip, limit=limit)
-    
-    if completed is not None:
-        tasks = [task for task in tasks if task.completed == completed]
-    
-    return tasks
+    return await task_service.get_user_tasks(session, current_user.id, skip=skip, limit=limit)
 
-@app.get("/tasks/{task_id}", response_model=schemas.TaskResponse)
-async def read_task(task: models.Task = Depends(verify_task_ownership)):
-    return task
+@task_routers.get("/{id}", response_model=task_schemas.TaskResponse)
+async def get_task(
+    id: int,
+    current_user: models.User = Depends(auth.get_current_active_user),
+    session: AsyncSession = Depends(get_async_session),
+    task_service: TaskService = Depends(get_task_service)
+):
+   return await task_service.get_task_by_id(session, id, current_user.id)
 
-@app.put("/tasks/{task_id}", response_model=schemas.TaskResponse)
+@task_routers.put("/{task_id}", response_model=task_schemas.TaskResponse)
 async def update_task(
-    task_update: schemas.TaskUpdate,
+    task_update: task_schemas.TaskUpdate,
     task_id: int,
     current_user: models.User = Depends(auth.get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_async_session),
+    task_service: TaskService = Depends(get_task_service)
 ):
-    updated_task = await crud.update_task(db, task_id, task_update, current_user.id)
-    if not updated_task:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Task not found or access denied"
-        )
-    return updated_task
+    return await task_service.update_task(session, task_id, task_update, current_user.id)
+    
 
-@app.delete("/tasks/{task_id}")
+@task_routers.delete("/{task_id}")
 async def delete_task(
     task_id: int,
     current_user: models.User = Depends(auth.get_current_active_user),
-    db: AsyncSession = Depends(get_db)
+    session: AsyncSession = Depends(get_async_session),
+    task_service: TaskService = Depends(get_task_service)
 ):
-    success = await crud.delete_task(db, task_id, current_user.id)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Task not found or access denied"
-        )
-    return {"message": "Task deleted successfully"}"""
+    return await task_service.delete_task(session, task_id, current_user.id)
