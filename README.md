@@ -15,3 +15,5 @@ cd proyecto
 docker-compose up --build
 
 # La aplicación estará en: http://localhost:8000
+
+# Primero registrese y para auntenticarse introduzca su email en el campo de nombre de usuario
